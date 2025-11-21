@@ -1,0 +1,59 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String    @id @default(cuid())
+  ipHash          String    // Hashed IP for ban tracking
+  fingerprintHash String?   // Browser fingerprint hash
+  createdAt       DateTime  @default(now())
+  lastSeen        DateTime  @default(now())
+  
+  // Ban fields
+  banned          Boolean   @default(false)
+  bannedAt        DateTime?
+  banExpiry       DateTime? // If null, ban is permanent
+  banReason       String?
+  
+  reportsReceived Report[]
+  sessions        Session[]
+
+  @@unique([ipHash])
+  @@index([fingerprintHash])
+  @@index([banned])
+}
+
+model Session {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  startTime   DateTime @default(now())
+  endTime     DateTime?
+  partnerId   String?  // ID of the user they matched with
+  messages    Int      @default(0)
+  duration    Int      @default(0) // in seconds
+  tags        String[]
+}
+
+model Report {
+  id          String   @id @default(cuid())
+  reporterId  String?  // Optional, as reporters are anon
+  reportedId  String
+  reportedUser User    @relation(fields: [reportedId], references: [id])
+  reason      String
+  screenshot  String?  // URL to screenshot
+  timestamp   DateTime @default(now())
+  status      ReportStatus @default(PENDING)
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWED
+  DISMISSED
+  ACTIONED
+}
