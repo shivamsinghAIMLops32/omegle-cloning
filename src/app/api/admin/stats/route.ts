@@ -20,8 +20,8 @@ export async function GET() {
 
     return NextResponse.json({
       onlineUsers: parseInt(onlineUsers || "0"),
-      waitingText,
-      waitingVideo,
+      textQueue: waitingText,
+      videoQueue: waitingVideo,
       totalReports,
       pendingReports
     });
