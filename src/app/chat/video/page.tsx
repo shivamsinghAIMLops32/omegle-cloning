@@ -6,19 +6,24 @@ import VideoContainer from "@/components/chat/VideoContainer";
 import { Users, Video, ArrowLeft, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { getSocket } from "@/lib/socket";
 
 export default function VideoChatPage() {
-  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [onlineUsers, setOnlineUsers] = useState(0);
   const [queueCount, setQueueCount] = useState(0);
+  const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
+  
+  const socket = getSocket();
 
   useEffect(() => {
     // Request camera/microphone access
     navigator.mediaDevices
       .getUserMedia({ video: true, audio: true })
-      .then((currentStream) => {
-        setStream(currentStream);
+      .then((stream) => {
+        setLocalStream(stream);
       })
       .catch((err) => {
         console.error("Error accessing media devices:", err);
@@ -26,11 +31,120 @@ export default function VideoChatPage() {
       });
 
     return () => {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
+      if (localStream) {
+        localStream.getTracks().forEach((track) => track.stop());
+      }
+      if (peerConnection) {
+        peerConnection.close();
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!localStream) return;
+
+    socket.connect();
+
+    // WebRTC signaling handlers
+    const handleWebRTCOffer = async (data: { offer: RTCSessionDescriptionInit, senderId: string }) => {
+      console.log("Received WebRTC offer");
+      
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+      });
+
+      // Add local stream tracks
+      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+      // Handle incoming remote stream
+      pc.ontrack = (event) => {
+        console.log("Received remote track");
+        setRemoteStream(event.streams[0]);
+      };
+
+      // Handle ICE candidates
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit("webrtc_ice_candidate", { candidate: event.candidate });
+        }
+      };
+
+      await pc.setRemoteDescription(data.offer);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      socket.emit("webrtc_answer", { answer });
+      setPeerConnection(pc);
+    };
+
+    const handleWebRTCAnswer = async (data: { answer: RTCSessionDescriptionInit }) => {
+      console.log("Received WebRTC answer");
+      if (peerConnection) {
+        await peerConnection.setRemoteDescription(data.answer);
+      }
+    };
+
+    const handleWebRTCIceCandidate = async (data: { candidate: RTCIceCandidate }) => {
+      console.log("Received ICE candidate");
+      if (peerConnection) {
+        await peerConnection.addIceCandidate(data.candidate);
+      }
+    };
+
+    const handleMatchFound = async () => {
+      console.log("Match found, initiating WebRTC");
+      
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+      });
+
+      // Add local stream tracks
+      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+      // Handle incoming remote stream
+      pc.ontrack = (event) => {
+        console.log("Received remote track");
+        setRemoteStream(event.streams[0]);
+      };
+
+      // Handle ICE candidates
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket.emit("webrtc_ice_candidate", { candidate: event.candidate });
+        }
+      };
+
+      // Create and send offer
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit("webrtc_offer", { offer });
+      
+      setPeerConnection(pc);
+    };
+
+    const handlePartnerDisconnected = () => {
+      console.log("Partner disconnected");
+      setRemoteStream(null);
+      if (peerConnection) {
+        peerConnection.close();
+        setPeerConnection(null);
+      }
+    };
+
+    socket.on("match_found", handleMatchFound);
+    socket.on("webrtc_offer", handleWebRTCOffer);
+    socket.on("webrtc_answer", handleWebRTCAnswer);
+    socket.on("webrtc_ice_candidate", handleWebRTCIceCandidate);
+    socket.on("partner_disconnected", handlePartnerDisconnected);
+
+    return () => {
+      socket.off("match_found", handleMatchFound);
+      socket.off("webrtc_offer", handleWebRTCOffer);
+      socket.off("webrtc_answer", handleWebRTCAnswer);
+      socket.off("webrtc_ice_candidate", handleWebRTCIceCandidate);
+      socket.off("partner_disconnected", handlePartnerDisconnected);
+    };
+  }, [localStream, peerConnection]);
 
   useEffect(() => {
     // Fetch stats from API
@@ -122,7 +236,7 @@ export default function VideoChatPage() {
                 </p>
               </div>
             ) : (
-              <VideoContainer stream={stream} />
+              <VideoContainer stream={localStream} remoteStream={remoteStream} />
             )}
           </div>
 
@@ -137,7 +251,7 @@ export default function VideoChatPage() {
           <div className="inline-flex items-center gap-2 bg-slate-900/40 backdrop-blur-xl border border-white/5 rounded-full px-6 py-3">
             <Sparkles className="h-4 w-4 text-purple-400 animate-pulse" />
             <p className="text-sm text-slate-300">
-              Pro tip: Use <kbd className="px-2 py-1 bg-slate-800 rounded text-xs border border-slate-700">Space</kbd> to mute/unmute quickly
+              Video chat powered by WebRTC • Your connection is peer-to-peer and secure
             </p>
           </div>
         </footer>
@@ -161,13 +275,6 @@ export default function VideoChatPage() {
           50% { transform: translate(15px, -15px) scale(1.1); }
         }
 
-        @keyframes blob {
-          0%, 100% { transform: translate(0, 0) scale(1); }
-          25% { transform: translate(20px, -20px) scale(1.1); }
-          50% { transform: translate(-20px, 20px) scale(0.9); }
-          75% { transform: translate(10px, 10px) scale(1.05); }
-        }
-
         .animate-float {
           animation: float 20s ease-in-out infinite;
         }
@@ -178,18 +285,6 @@ export default function VideoChatPage() {
 
         .animate-float-slow {
           animation: float-slow 30s ease-in-out infinite;
-        }
-
-        .animate-blob {
-          animation: blob 15s ease-in-out infinite;
-        }
-
-        .animation-delay-2000 {
-  animation-delay: 2s;
-        }
-
-        .animation-delay-4000 {
-          animation-delay: 4s;
         }
       `}</style>
     </div>
