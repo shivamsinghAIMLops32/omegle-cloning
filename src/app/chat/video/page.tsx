@@ -206,6 +206,17 @@ export default function VideoChatPage() {
     };
   }, [localStream]);
 
+  const handleSkip = () => {
+    console.log("Skipping partner, resetting WebRTC state...");
+    setConnectionStatus("Searching...");
+    setRemoteStream(null);
+    candidateQueueRef.current = [];
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+  };
+
   useEffect(() => {
     // Fetch stats from API
     const fetchStats = async () => {
@@ -312,7 +323,7 @@ export default function VideoChatPage() {
 
           {/* Chat Section - 40% width */}
           <div className="flex-[2] flex flex-col min-w-0 min-h-0">
-            <ChatBox mode="video" />
+            <ChatBox mode="video" onNext={handleSkip} />
           </div>
         </div>
 

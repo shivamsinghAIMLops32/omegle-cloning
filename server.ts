@@ -35,7 +35,6 @@ app.prepare().then(async () => {
     await redis.del(`user:${socketId}:queue_type`);
     const roomId = await redis.get(`user:${socketId}:room`);
     if (roomId) {
-      io.to(roomId).emit("message", { sender: "system", text: "Stranger disconnected." });
       io.to(roomId).emit("partner_disconnected");
       await redis.del(`user:${socketId}:room`);
     }
@@ -132,8 +131,7 @@ app.prepare().then(async () => {
     socket.on("leave_room", async () => {
       const roomId = await redis.get(`user:${socket.id}:room`);
       if (roomId) {
-        io.to(roomId).emit("message", { sender: "system", text: "Stranger has disconnected." });
-        io.to(roomId).emit("partner_disconnected");
+        socket.to(roomId).emit("partner_disconnected");
         socket.leave(roomId);
         await redis.del(`user:${socket.id}:room`);
       }

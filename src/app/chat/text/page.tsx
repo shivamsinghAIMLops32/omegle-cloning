@@ -6,9 +6,33 @@ import { Users, MessageSquare, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
+import { getSocket } from "@/lib/socket";
+
 export default function TextChatPage() {
   const [onlineUsers, setOnlineUsers] = useState(0);
   const [queueCount, setQueueCount] = useState(0);
+  const [connectionStatus, setConnectionStatus] = useState<string>("Idle");
+  const socket = getSocket();
+
+  useEffect(() => {
+    socket.connect();
+
+    const handleMatchFound = () => {
+      setConnectionStatus("Connected");
+    };
+
+    const handlePartnerDisconnected = () => {
+      setConnectionStatus("Partner Disconnected");
+    };
+
+    socket.on("match_found", handleMatchFound);
+    socket.on("partner_disconnected", handlePartnerDisconnected);
+
+    return () => {
+      socket.off("match_found", handleMatchFound);
+      socket.off("partner_disconnected", handlePartnerDisconnected);
+    };
+  }, []);
 
   useEffect(() => {
     // Fetch stats from API
@@ -28,6 +52,10 @@ export default function TextChatPage() {
 
     return () => clearInterval(interval);
   }, []);
+
+  const handleSkip = () => {
+    setConnectionStatus("Searching...");
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
@@ -55,6 +83,16 @@ export default function TextChatPage() {
           </div>
           
           <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 bg-slate-800/50 border border-slate-700 rounded-full px-4 py-2 backdrop-blur-sm">
+              <span className="text-xs font-mono text-slate-400">Status:</span>
+              <span className={`text-sm font-bold ${
+                connectionStatus === "Connected" ? "text-emerald-400" : 
+                connectionStatus === "Partner Disconnected" ? "text-red-400" : "text-amber-400"
+              }`}>
+                {connectionStatus}
+              </span>
+            </div>
+
             <div className="flex items-center gap-2 bg-slate-800/50 backdrop-blur-xl border border-slate-700 rounded-full px-4 py-2">
               <Users className="h-4 w-4 text-green-400" />
               <span className="text-sm text-slate-300">
@@ -72,7 +110,7 @@ export default function TextChatPage() {
 
         {/* Chat Container */}
         <div className="flex-1 max-w-5xl w-full mx-auto">
-          <ChatBox mode="text" />
+          <ChatBox mode="text" onNext={handleSkip} />
         </div>
 
         {/* Footer Tips */}

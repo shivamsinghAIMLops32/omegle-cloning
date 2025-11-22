@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getClientIP, hashIP, generateUserIdentifier } from "@/lib/fingerprint";
+import { getLocationFromIP, maskIP } from "@/lib/geolocation";
 
 export async function POST(req: NextRequest) {
   try {
@@ -40,6 +41,10 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // Get location from IP for admin tracking
+    const location = await getLocationFromIP(ip);
+    const maskedIP = maskIP(ip);
+
     // User is not banned, create or update user record
     await prisma.user.upsert({
       where: { id: userId },
@@ -47,9 +52,15 @@ export async function POST(req: NextRequest) {
         id: userId,
         ipHash,
         fingerprintHash,
+        ipAddress: maskedIP,
+        country: location?.country || null,
+        city: location?.city || null,
       },
       update: {
         lastSeen: new Date(),
+        ipAddress: maskedIP,
+        country: location?.country || null,
+        city: location?.city || null,
       },
     });
 

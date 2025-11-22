@@ -27,7 +27,7 @@ type Message = {
 
 type ChatState = "idle" | "searching" | "connected" | "disconnected";
 
-export default function ChatBox({ mode = "text" }: { mode?: "text" | "video" }) {
+export default function ChatBox({ mode = "text", onNext }: { mode?: "text" | "video", onNext?: () => void }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [tags, setTags] = useState("");
@@ -147,6 +147,7 @@ export default function ChatBox({ mode = "text" }: { mode?: "text" | "video" }) 
   };
 
   const handleNext = () => {
+    if (onNext) onNext();
     socket.emit("leave_room");
     setChatState("searching");
     setMessages([]);

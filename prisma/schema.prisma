@@ -10,7 +10,11 @@ datasource db {
 model User {
   id              String    @id @default(cuid())
   ipHash          String    // Hashed IP for ban tracking
+  ipAddress       String?   // Last 4 digits of IP for admin view
   fingerprintHash String?   // Browser fingerprint hash
+  country         String?   // From IP geolocation
+  city            String?   // From IP geolocation
+  reportCount     Int       @default(0) // Number of times reported
   createdAt       DateTime  @default(now())
   lastSeen        DateTime  @default(now())
   
@@ -41,14 +45,15 @@ model Session {
 }
 
 model Report {
-  id          String   @id @default(cuid())
-  reporterId  String?  // Optional, as reporters are anon
-  reportedId  String
-  reportedUser User    @relation(fields: [reportedId], references: [id])
-  reason      String
-  screenshot  String?  // URL to screenshot
-  timestamp   DateTime @default(now())
-  status      ReportStatus @default(PENDING)
+  id                 String   @id @default(cuid())
+  reporterId         String?  // Optional, as reporters are anon
+  reporterFingerprint String? // Track reporter by fingerprint
+  reportedId         String
+  reportedUser       User     @relation(fields: [reportedId], references: [id])
+  reason             String
+  screenshot         String?  // URL to screenshot
+  timestamp          DateTime @default(now())
+  status             ReportStatus @default(PENDING)
 }
 
 enum ReportStatus {
