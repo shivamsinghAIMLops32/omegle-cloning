@@ -14,7 +14,7 @@ export default function TextChatPage() {
     // Fetch stats from API
     const fetchStats = async () => {
       try {
-        const res = await fetch("/api/admin/stats");
+        const res = await fetch("/api/stats");
         const data = await res.json();
         setOnlineUsers(data.onlineUsers || 0);
         setQueueCount(data.textQueue || 0);

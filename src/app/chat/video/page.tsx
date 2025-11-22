@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import ChatBox from "@/components/chat/ChatBox";
 import VideoContainer from "@/components/chat/VideoContainer";
 import { Users, Video, ArrowLeft, Sparkles } from "lucide-react";
@@ -14,7 +14,12 @@ export default function VideoChatPage() {
   const [error, setError] = useState<string | null>(null);
   const [onlineUsers, setOnlineUsers] = useState(0);
   const [queueCount, setQueueCount] = useState(0);
-  const [peerConnection, setPeerConnection] = useState<RTCPeerConnection | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<string>("Idle");
+  
+  // Use ref for peer connection to avoid dependency cycles and race conditions
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  // Queue for ICE candidates that arrive before remote description is set
+  const candidateQueueRef = useRef<RTCIceCandidate[]>([]);
   
   const socket = getSocket();
 
@@ -34,8 +39,8 @@ export default function VideoChatPage() {
       if (localStream) {
         localStream.getTracks().forEach((track) => track.stop());
       }
-      if (peerConnection) {
-        peerConnection.close();
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
       }
     };
   }, []);
@@ -45,20 +50,23 @@ export default function VideoChatPage() {
 
     socket.connect();
 
-    // WebRTC signaling handlers
-    const handleWebRTCOffer = async (data: { offer: RTCSessionDescriptionInit, senderId: string }) => {
-      console.log("Received WebRTC offer");
-      
+    const createPeerConnection = () => {
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+      }
+
       const pc = new RTCPeerConnection({
         iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
       });
+      
+      peerConnectionRef.current = pc;
 
       // Add local stream tracks
       localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
       // Handle incoming remote stream
       pc.ontrack = (event) => {
-        console.log("Received remote track");
+        console.log("Received remote track", event.streams[0]);
         setRemoteStream(event.streams[0]);
       };
 
@@ -69,65 +77,117 @@ export default function VideoChatPage() {
         }
       };
 
-      await pc.setRemoteDescription(data.offer);
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
+      // Connection state logging
+      pc.onconnectionstatechange = () => {
+        console.log("Connection state:", pc.connectionState);
+        setConnectionStatus(pc.connectionState);
+      };
 
-      socket.emit("webrtc_answer", { answer });
-      setPeerConnection(pc);
+      pc.oniceconnectionstatechange = () => {
+        console.log("ICE connection state:", pc.iceConnectionState);
+      };
+
+      return pc;
+    };
+
+    const processCandidateQueue = async () => {
+      if (!peerConnectionRef.current || !peerConnectionRef.current.remoteDescription) return;
+      
+      while (candidateQueueRef.current.length > 0) {
+        const candidate = candidateQueueRef.current.shift();
+        if (candidate) {
+          try {
+            await peerConnectionRef.current.addIceCandidate(candidate);
+            console.log("Added queued ICE candidate");
+          } catch (err) {
+            console.error("Error adding queued ICE candidate:", err);
+          }
+        }
+      }
+    };
+
+    // WebRTC signaling handlers
+    const handleWebRTCOffer = async (data: { offer: RTCSessionDescriptionInit, senderId: string }) => {
+      console.log("Received WebRTC offer");
+      setConnectionStatus("Received Offer");
+      
+      const pc = createPeerConnection();
+
+      try {
+        await pc.setRemoteDescription(data.offer);
+        // Process any queued candidates now that remote description is set
+        await processCandidateQueue();
+        
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        socket.emit("webrtc_answer", { answer });
+      } catch (err) {
+        console.error("Error handling WebRTC offer:", err);
+      }
     };
 
     const handleWebRTCAnswer = async (data: { answer: RTCSessionDescriptionInit }) => {
       console.log("Received WebRTC answer");
-      if (peerConnection) {
-        await peerConnection.setRemoteDescription(data.answer);
+      setConnectionStatus("Received Answer");
+      if (peerConnectionRef.current) {
+        try {
+          await peerConnectionRef.current.setRemoteDescription(data.answer);
+          // Process any queued candidates
+          await processCandidateQueue();
+        } catch (err) {
+          console.error("Error setting remote description from answer:", err);
+        }
       }
     };
 
     const handleWebRTCIceCandidate = async (data: { candidate: RTCIceCandidate }) => {
       console.log("Received ICE candidate");
-      if (peerConnection) {
-        await peerConnection.addIceCandidate(data.candidate);
+      const candidate = new RTCIceCandidate(data.candidate);
+      
+      if (peerConnectionRef.current && peerConnectionRef.current.remoteDescription) {
+        try {
+          await peerConnectionRef.current.addIceCandidate(candidate);
+        } catch (err) {
+          console.error("Error adding ICE candidate:", err);
+        }
+      } else {
+        console.log("Queueing ICE candidate (remote description not set)");
+        candidateQueueRef.current.push(candidate);
       }
     };
 
-    const handleMatchFound = async () => {
-      console.log("Match found, initiating WebRTC");
+    const handleMatchFound = async (data: { initiator: boolean }) => {
+      console.log("Match found, initiator:", data.initiator);
+      setConnectionStatus(data.initiator ? "Initiating..." : "Waiting for offer...");
       
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-      });
+      // Clear candidate queue on new match
+      candidateQueueRef.current = [];
+      
+      if (!data.initiator) {
+        return;
+      }
 
-      // Add local stream tracks
-      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-
-      // Handle incoming remote stream
-      pc.ontrack = (event) => {
-        console.log("Received remote track");
-        setRemoteStream(event.streams[0]);
-      };
-
-      // Handle ICE candidates
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          socket.emit("webrtc_ice_candidate", { candidate: event.candidate });
-        }
-      };
+      const pc = createPeerConnection();
 
       // Create and send offer
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      socket.emit("webrtc_offer", { offer });
-      
-      setPeerConnection(pc);
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit("webrtc_offer", { offer });
+      } catch (err) {
+        console.error("Error creating offer:", err);
+      }
     };
 
     const handlePartnerDisconnected = () => {
       console.log("Partner disconnected");
+      setConnectionStatus("Partner Disconnected");
       setRemoteStream(null);
-      if (peerConnection) {
-        peerConnection.close();
-        setPeerConnection(null);
+      candidateQueueRef.current = [];
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+        peerConnectionRef.current = null;
       }
     };
 
@@ -144,13 +204,13 @@ export default function VideoChatPage() {
       socket.off("webrtc_ice_candidate", handleWebRTCIceCandidate);
       socket.off("partner_disconnected", handlePartnerDisconnected);
     };
-  }, [localStream, peerConnection]);
+  }, [localStream]);
 
   useEffect(() => {
     // Fetch stats from API
     const fetchStats = async () => {
       try {
-        const res = await fetch("/api/admin/stats");
+        const res = await fetch("/api/stats");
         const data = await res.json();
         setOnlineUsers(data.onlineUsers || 0);
         setQueueCount(data.videoQueue || 0);
@@ -204,6 +264,16 @@ export default function VideoChatPage() {
           </div>
           
           <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 bg-slate-800/50 border border-slate-700 rounded-full px-4 py-2 backdrop-blur-sm">
+              <span className="text-xs font-mono text-slate-400">Status:</span>
+              <span className={`text-sm font-bold ${
+                connectionStatus === "connected" ? "text-emerald-400" : 
+                connectionStatus === "failed" ? "text-red-400" : "text-amber-400"
+              }`}>
+                {connectionStatus}
+              </span>
+            </div>
+
             <div className="flex items-center gap-2 bg-gradient-to-r from-emerald-500/10 to-green-500/10 border border-emerald-500/30 rounded-full px-4 py-2 backdrop-blur-sm">
               <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse shadow-lg shadow-emerald-400/50" />
               <Users className="h-4 w-4 text-emerald-300" />
