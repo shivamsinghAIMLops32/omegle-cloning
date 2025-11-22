@@ -45,6 +45,9 @@ export async function POST(req: NextRequest) {
     const location = await getLocationFromIP(ip);
     const maskedIP = maskIP(ip);
 
+    console.log("[BAN CHECK] IP:", ip, "→ Masked:", maskedIP);
+    console.log("[BAN CHECK] Location:", location);
+
     // User is not banned, create or update user record
     await prisma.user.upsert({
       where: { id: userId },
@@ -63,6 +66,8 @@ export async function POST(req: NextRequest) {
         city: location?.city || null,
       },
     });
+
+    console.log("[BAN CHECK] User upserted:", userId);
 
     return NextResponse.json({
       banned: false,

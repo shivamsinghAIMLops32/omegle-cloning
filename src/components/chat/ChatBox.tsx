@@ -271,7 +271,7 @@ export default function ChatBox({ mode = "text", onNext }: { mode?: "text" | "vi
 
       {/* Input Area */}
       <div className="border-t border-slate-800 bg-slate-900/80 backdrop-blur-xl p-4">
-        {chatState === "idle" && (
+        {(chatState === "idle" || chatState === "disconnected" || chatState === "searching") && (
           <div className="flex flex-col gap-3">
             <Input
               placeholder="Add interests (e.g., music, gaming, tech)"
@@ -279,24 +279,34 @@ export default function ChatBox({ mode = "text", onNext }: { mode?: "text" | "vi
               onChange={(e) => setTags(e.target.value)}
               className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500"
             />
-            <Button 
-              onClick={handleFindStranger} 
-              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg" 
-              size="lg"
-            >
-              Start Chatting
-            </Button>
+            {chatState === "idle" && (
+              <Button 
+                onClick={handleFindStranger} 
+                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg" 
+                size="lg"
+              >
+                Start Chatting
+              </Button>
+            )}
+            {chatState === "searching" && (
+              <Button disabled className="w-full" size="lg">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Searching for a stranger...
+              </Button>
+            )}
+            {chatState === "disconnected" && (
+              <Button 
+                onClick={handleFindStranger} 
+                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg" 
+                size="lg"
+              >
+                Find New Stranger
+              </Button>
+            )}
           </div>
         )}
 
-        {chatState === "searching" && (
-          <Button disabled className="w-full" size="lg">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Searching for a stranger...
-          </Button>
-        )}
-
-        {(chatState === "connected" || chatState === "disconnected") && (
+        {chatState === "connected" && (
           <div className="flex gap-2">
             <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}>
               <DialogTrigger asChild>

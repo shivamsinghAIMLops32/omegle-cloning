@@ -2,6 +2,9 @@ import { createServer } from "node:http";
 import next from "next";
 import { Server as SocketIOServer } from "socket.io";
 import Redis from "ioredis";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "localhost";
@@ -19,25 +22,41 @@ app.prepare().then(async () => {
 
   // Helper to clean up a socket on disconnect
   const cleanupSocket = async (socketId: string) => {
+    console.log(`[CLEANUP] Starting cleanup for ${socketId}`);
+    
+    // Decrement online users
     await redis.decr("stats:users:online");
+    
     const queueType = await redis.get(`user:${socketId}:queue_type`);
+    
     if (queueType === "tagged") {
+      // Remove from tagged queues
       const tags = await redis.smembers(`user:${socketId}:tags`);
+      console.log(`[CLEANUP] Removing from tagged queues: ${tags.join(', ')}`);
+      
       for (const tag of tags) {
         await redis.lrem(`queue:text:tag:${tag}`, 0, socketId);
         await redis.lrem(`queue:video:tag:${tag}`, 0, socketId);
       }
       await redis.del(`user:${socketId}:tags`);
     } else if (queueType === "general") {
+      // Remove from general queues
+      console.log(`[CLEANUP] Removing from general queues`);
       await redis.lrem("queue:text", 0, socketId);
       await redis.lrem("queue:video", 0, socketId);
     }
+    
     await redis.del(`user:${socketId}:queue_type`);
+    
+    // Clean up room if in one
     const roomId = await redis.get(`user:${socketId}:room`);
     if (roomId) {
+      console.log(`[CLEANUP] Disconnecting from room: ${roomId}`);
       io.to(roomId).emit("partner_disconnected");
       await redis.del(`user:${socketId}:room`);
     }
+    
+    console.log(`[CLEANUP] Cleanup complete for ${socketId}`);
   };
 
   io.on("connection", async (socket) => {
@@ -113,6 +132,36 @@ app.prepare().then(async () => {
 
     // ---------- Text Messaging ----------
     socket.on("message", async (data) => {
+      // Get user ID from Redis (stored during ban check)
+      const userId = await redis.get(`socket:${socket.id}:userId`);
+      
+      // Check if user is banned
+      if (userId) {
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { banned: true, banReason: true }
+        });
+
+        if (user?.banned) {
+          socket.emit("message", { 
+            sender: "system", 
+            text: `You have been banned. Reason: ${user.banReason || "Terms violation"}` 
+          });
+          socket.emit("banned", { reason: user.banReason });
+          
+          // Disconnect user from room
+          const roomId = await redis.get(`user:${socket.id}:room`);
+          if (roomId) {
+            socket.to(roomId).emit("partner_disconnected");
+            socket.leave(roomId);
+            await redis.del(`user:${socket.id}:room`);
+          }
+          
+          socket.disconnect();
+          return;
+        }
+      }
+
       const key = `ratelimit:msg:${socket.id}`;
       const count = await redis.incr(key);
       if (count === 1) await redis.expire(key, 60);
@@ -161,9 +210,14 @@ app.prepare().then(async () => {
     });
 
     // ---------- Disconnect ----------
-    socket.on("disconnect", async () => {
-      console.log("Client disconnected", socket.id);
+    socket.on("disconnect", async (reason) => {
+      console.log(`Client disconnected: ${socket.id}, reason: ${reason}`);
       await cleanupSocket(socket.id);
+    });
+
+    // Handle errors
+    socket.on("error", (error) => {
+      console.error(`Socket error for ${socket.id}:`, error);
     });
   });
 

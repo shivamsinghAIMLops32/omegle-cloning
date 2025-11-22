@@ -8,20 +8,25 @@ export async function POST(req: NextRequest) {
     const cookieStore = await cookies();
     const adminAuth = cookieStore.get("admin_auth");
 
-    if (!adminAuth || adminAuth.value !== "authenticated") {
+    if (!adminAuth || adminAuth.value !== "true") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { userId, action, reason, duration } = await req.json();
+    const body = await req.json();
+    const { userId, action, banned, banReason, reason, duration } = body;
 
-    if (!userId || !action) {
+    if (!userId) {
       return NextResponse.json(
-        { error: "userId and action required" },
+        { error: "userId required" },
         { status: 400 }
       );
     }
 
-    if (action === "ban") {
+    // Support both old (banned: boolean) and new (action: string) formats
+    const shouldBan = action === "ban" || (banned === true && action !== "unban");
+    const shouldUnban = action === "unban" || (banned === false && action !== "ban");
+
+    if (shouldBan) {
       // Calculate ban expiry if duration provided (in hours)
       let banExpiry = null;
       if (duration && duration > 0) {
@@ -32,7 +37,7 @@ export async function POST(req: NextRequest) {
         where: { id: userId },
         data: {
           banned: true,
-          banReason: reason || "Terms of service violation",
+          banReason: banReason || reason || "Terms of service violation",
           bannedAt: new Date(),
           banExpiry,
         },
@@ -42,7 +47,7 @@ export async function POST(req: NextRequest) {
         success: true,
         message: `User banned ${duration ? `for ${duration} hours` : "permanently"}`,
       });
-    } else if (action === "unban") {
+    } else if (shouldUnban) {
       await prisma.user.update({
         where: { id: userId },
         data: {
@@ -59,14 +64,14 @@ export async function POST(req: NextRequest) {
       });
     } else {
       return NextResponse.json(
-        { error: "Invalid action. Use 'ban' or 'unban'" },
+        { error: "Invalid action. Use 'ban' or 'unban', or set banned to true/false" },
         { status: 400 }
       );
     }
   } catch (error) {
     console.error("Ban action error:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "Internal server error", details: (error as Error).message },
       { status: 500 }
     );
   }

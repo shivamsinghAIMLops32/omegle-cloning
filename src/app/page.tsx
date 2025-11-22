@@ -2,7 +2,15 @@
 
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { MessageSquare, Video, Globe, Shield, Zap, Users } from "lucide-react";
+import dynamic from 'next/dynamic';
+
+// Dynamically import icons to reduce initial bundle
+const MessageSquare = dynamic(() => import('lucide-react').then(mod => ({ default: mod.MessageSquare })), { ssr: false });
+const Video = dynamic(() => import('lucide-react').then(mod => ({ default: mod.Video })), { ssr: false });
+const Globe = dynamic(() => import('lucide-react').then(mod => ({ default: mod.Globe })), { ssr: false });
+const Shield = dynamic(() => import('lucide-react').then(mod => ({ default: mod.Shield })), { ssr: false });
+const Zap = dynamic(() => import('lucide-react').then(mod => ({ default: mod.Zap })), { ssr: false });
+const Users = dynamic(() => import('lucide-react').then(mod => ({ default: mod.Users })), { ssr: false });
 
 export default function Home() {
   return (
@@ -13,7 +21,7 @@ export default function Home() {
           <div className="flex items-center gap-2">
             <Globe className="h-6 w-6 text-blue-500" />
             <span className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
-              StrangerChat
+              StrangerConnect
             </span>
           </div>
           <nav className="hidden md:flex items-center gap-6">
@@ -82,7 +90,7 @@ export default function Home() {
       {/* Features Section */}
       <section id="features" className="container mx-auto px-4 py-20">
         <h2 className="text-3xl md:text-4xl font-bold text-center mb-12 bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">
-          Why Choose StrangerChat?
+          Why Choose StrangerConnect?
         </h2>
         <div className="grid md:grid-cols-3 gap-8">
           <FeatureCard
@@ -168,7 +176,7 @@ export default function Home() {
             <div>
               <div className="flex items-center gap-2 mb-4">
                 <Globe className="h-5 w-5 text-blue-500" />
-                <span className="font-bold text-white">StrangerChat</span>
+                <span className="font-bold text-white">StrangerConnect</span>
               </div>
               <p className="text-sm text-slate-400">
                 Connect with strangers worldwide through anonymous text and video chat.
@@ -200,7 +208,7 @@ export default function Home() {
             </div>
           </div>
           <div className="border-t border-slate-800 mt-8 pt-8 text-center text-sm text-slate-500">
-            <p>© 2024 StrangerChat. All rights reserved. Use responsibly and stay safe online.</p>
+            <p>© 2024 StrangerConnect. All rights reserved. Use responsibly and stay safe online.</p>
             <p className="mt-2">By using this service, you agree to our Terms of Service and Privacy Policy.</p>
           </div>
         </div>
