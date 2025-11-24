@@ -1,6 +1,7 @@
 // NSFW Detection Hook for Video Chat
 // Add this to your video chat page after the localStream useEffect
 
+import { analyzeVideo, disposeNSFWModel, loadNSFWModel } from '@/lib/nsfw-detection';
 import { useEffect } from 'react';
 
 /**
