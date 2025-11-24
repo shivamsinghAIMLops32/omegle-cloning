@@ -17,6 +17,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { getSocket } from "@/lib/socket";
+import toast from "react-hot-toast";
+import { getRandomIcebreaker } from "@/lib/icebreakers";
 
 type Message = {
   id: string;
@@ -35,6 +37,7 @@ export default function ChatBox({ mode = "text", onNext }: { mode?: "text" | "vi
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [icebreaker, setIcebreaker] = useState<string | null>(null);
   const socket = getSocket();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -52,6 +55,11 @@ export default function ChatBox({ mode = "text", onNext }: { mode?: "text" | "vi
         },
       ]);
       setIsTyping(false);
+      
+      // Play sound on message received
+      if (data.sender === "stranger") {
+        new Audio("/sounds/message.mp3").play().catch(() => {});
+      }
     };
 
     const onMatchFound = () => {
@@ -64,6 +72,13 @@ export default function ChatBox({ mode = "text", onNext }: { mode?: "text" | "vi
           timestamp: Date.now(),
         },
       ]);
+      
+      // Play sound and show toast on match
+      new Audio("/sounds/match.mp3").play().catch(() => {});
+      toast.success("Connected to a stranger!", { icon: "💬" });
+      
+      // Set random icebreaker
+      setIcebreaker(getRandomIcebreaker());
     };
 
     const onPartnerDisconnected = () => {
@@ -77,6 +92,8 @@ export default function ChatBox({ mode = "text", onNext }: { mode?: "text" | "vi
           timestamp: Date.now(),
         },
       ]);
+      
+      toast("Stranger disconnected", { icon: "👋" });
     };
 
     const onPartnerTyping = () => {
@@ -132,9 +149,22 @@ export default function ChatBox({ mode = "text", onNext }: { mode?: "text" | "vi
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Ctrl/Cmd + Enter to send
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       handleSend();
+      toast.success("Message sent!", { icon: "✉️", duration: 1000 });
+    }
+    // Enter to send (legacy)
+    else if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+    // Escape to leave
+    else if (e.key === "Escape" && chatState === "connected") {
+      e.preventDefault();
+      handleNext();
+      toast("Left chat", { icon: "👋", duration: 2000 });
     }
   };
 
@@ -220,6 +250,42 @@ export default function ChatBox({ mode = "text", onNext }: { mode?: "text" | "vi
       {/* Messages Area */}
       <ScrollArea className="flex-1 p-6 bg-slate-950/50">
         <div className="flex flex-col gap-3">
+          {/* Icebreaker Suggestion */}
+          {icebreaker && chatState === "connected" && (
+            <div className="mb-4 p-4 bg-gradient-to-r from-blue-600/10 to-purple-600/10 border border-blue-500/30 rounded-lg">
+              <div className="flex items-start gap-2 mb-2">
+                <span className="text-lg">💡</span>
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-blue-300 mb-1">Icebreaker Suggestion:</p>
+                  <p className="text-white">{icebreaker}</p>
+                </div>
+              </div>
+              <div className="flex gap-2 mt-3">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setInput(icebreaker);
+                    setIcebreaker(null);
+                    toast.success("Icebreaker added to message!", { duration: 1500 });
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700 text-xs"
+                >
+                  Use This
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setIcebreaker(null);
+                  }}
+                  className="text-xs hover:bg-slate-800"
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          )}
+          
           {messages.length === 0 && chatState === "idle" && (
             <div className="flex flex-col items-center justify-center h-64 text-center">
               <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mb-4">

@@ -209,6 +209,21 @@ app.prepare().then(async () => {
       }
     });
 
+    // ---------- Typing Indicators ----------
+    socket.on("typing", async () => {
+      const roomId = await redis.get(`user:${socket.id}:room`);
+      if (roomId) {
+        socket.to(roomId).emit("partner_typing");
+      }
+    });
+
+    socket.on("stop_typing", async () => {
+      const roomId = await redis.get(`user:${socket.id}:room`);
+      if (roomId) {
+        socket.to(roomId).emit("partner_stop_typing");
+      }
+    });
+
     // ---------- Disconnect ----------
     socket.on("disconnect", async (reason) => {
       console.log(`Client disconnected: ${socket.id}, reason: ${reason}`);

@@ -7,6 +7,9 @@ import { Users, Video, ArrowLeft, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { getSocket } from "@/lib/socket";
+import { loadNSFWModel, analyzeVideo, disposeNSFWModel } from "@/lib/nsfw-detection";
+import toast from "react-hot-toast";
+import { useNSFWMonitoring } from "@/hooks/useNSFWMonitoring";
 
 export default function VideoChatPage() {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -15,13 +18,54 @@ export default function VideoChatPage() {
   const [onlineUsers, setOnlineUsers] = useState(0);
   const [queueCount, setQueueCount] = useState(0);
   const [connectionStatus, setConnectionStatus] = useState<string>("Idle");
+  const [nsfwViolations, setNsfwViolations] = useState(0);
+  const [isNsfwDetectionEnabled, setIsNsfwDetectionEnabled] = useState(true);
+  const [lastNsfwCheck, setLastNsfwCheck] = useState(0);
   
   // Use ref for peer connection to avoid dependency cycles and race conditions
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   // Queue for ICE candidates that arrive before remote description is set
   const candidateQueueRef = useRef<RTCIceCandidate[]>([]);
+  const nsfwIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const partnerVideoRef = useRef<HTMLVideoElement | null>(null);
   
   const socket = getSocket();
+
+  // Handle NSFW violations
+  const handleNSFWViolation = () => {
+    const newViolationCount = nsfwViolations + 1;
+    setNsfwViolations(newViolationCount);
+
+    if (newViolationCount === 1) {
+      toast.error("⚠️ Inappropriate content detected! Warning 1/3", {
+        duration: 5000,
+      });
+    } else if (newViolationCount === 2) {
+      toast.error("⚠️ Second warning! One more and you'll be disconnected.", {
+        duration: 5000,
+      });
+    } else if (newViolationCount >= 3) {
+      toast.error("🚫 Too many violations. Disconnecting...", {
+        duration: 3000,
+      });
+      // Disconnect and navigate away
+      setTimeout(() => {
+        if (peerConnectionRef.current) {
+          peerConnectionRef.current.close();
+        }
+        socket.emit("leave_room");
+        window.location.href = "/";
+      }, 2000);
+    }
+  };
+
+  // Use NSFW monitoring hook
+  useNSFWMonitoring({
+    remoteStream,
+    isEnabled: isNsfwDetectionEnabled,
+    onViolation: handleNSFWViolation,
+    sensitivity: 'medium',
+  });
 
   useEffect(() => {
     // Request camera/microphone access

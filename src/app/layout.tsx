@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { Toaster } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -92,6 +93,29 @@ export default function RootLayout({
         className={cn(inter.className, "min-h-screen bg-background font-sans antialiased")}
         suppressHydrationWarning
       >
+        <Toaster 
+          position="top-right"
+          toastOptions={{
+            duration: 3000,
+            style: {
+              background: '#1e293b',
+              color: '#f1f5f9',
+              border: '1px solid #475569',
+            },
+            success: {
+              iconTheme: {
+                primary: '#10b981',
+                secondary: '#f1f5f9',
+              },
+            },
+            error: {
+              iconTheme: {
+                primary: '#ef4444',
+                secondary: '#f1f5f9',
+              },
+            },
+          }}
+        />
         {children}
       </body>
     </html>
