@@ -1,0 +1,56 @@
+# Caddyfile for StrangerConnect - Localhost Development
+# No HTTPS - Simple HTTP for local development
+
+# Localhost configuration on port 80
+:80 {
+    # Reverse proxy to Next.js app (running in Docker)
+    reverse_proxy app:3000 {
+        # WebSocket support for Socket.IO
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up Host {host}
+        
+        # Keep connections alive for WebSocket
+        transport http {
+            keepalive 90s
+            keepalive_idle_conns 10
+        }
+    }
+
+    # Security headers
+    header {
+        # Prevent clickjacking
+        X-Frame-Options "SAMEORIGIN"
+        
+        # XSS protection
+        X-Content-Type-Options "nosniff"
+        X-XSS-Protection "1; mode=block"
+        
+        # Referrer policy
+        Referrer-Policy "strict-origin-when-cross-origin"
+        
+        # Remove server header
+        -Server
+    }
+
+    # Compression
+    encode gzip zstd
+
+    # Logging to console (visible in docker logs)
+    log {
+        output stdout
+        format console
+        level INFO
+    }
+}
+
+# Alternative port for testing
+:8080 {
+    reverse_proxy app:3000
+    
+    log {
+        output stdout
+        format console
+    }
+}

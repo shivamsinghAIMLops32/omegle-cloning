@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   postgres:
@@ -12,8 +10,8 @@ services:
       POSTGRES_DB: ${DB_NAME:-strangerconnect}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    networks:
+      - strangerconnect-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -28,8 +26,8 @@ services:
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
+    networks:
+      - strangerconnect-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -43,25 +41,53 @@ services:
       dockerfile: Dockerfile
     container_name: strangerconnect-app
     restart: unless-stopped
-    ports:
-      - "3000:3000"
     environment:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-changeme}@postgres:5432/${DB_NAME:-strangerconnect}
       - REDIS_URL=redis://redis:6379
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme}
-      - NEXT_PUBLIC_SITE_URL=${SITE_URL:-http://localhost:3000}
+      - NEXT_PUBLIC_SITE_URL=${SITE_URL:-http://localhost}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - strangerconnect-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/stats"]
       interval: 30s
       timeout: 10s
+      retries: 3
+
+  # Caddy Reverse Proxy
+  caddy:
+    image: caddy:2-alpine
+    container_name: strangerconnect-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"      # HTTP
+      - "8080:8080"  # Alternative port
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    networks:
+      - strangerconnect-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 10s
+      timeout: 5s
       retries: 3
 
 volumes:
   postgres_data:
   redis_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  strangerconnect-network:
+    driver: bridge
