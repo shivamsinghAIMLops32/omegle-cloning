@@ -1,10 +1,10 @@
-# Caddyfile for StrangerConnect - Localhost Development
-# No HTTPS - Simple HTTP for local development
+# Caddyfile for StrangerConnect - Localhost Development with HTTPS
+# Caddy automatically provides HTTPS for localhost with self-signed cert
 
-# Localhost configuration on port 80
-:80 {
-    # Reverse proxy to Next.js app (running in Docker)
-    reverse_proxy app:3000 {
+# HTTPS localhost (automatic self-signed certificate)
+localhost {
+    # Reverse proxy to locally running Next.js app
+    reverse_proxy localhost:3000 {
         # WebSocket support for Socket.IO
         header_up X-Real-IP {remote_host}
         header_up X-Forwarded-For {remote_host}
@@ -37,7 +37,7 @@
     # Compression
     encode gzip zstd
 
-    # Logging to console (visible in docker logs)
+    # Logging to console
     log {
         output stdout
         format console
@@ -45,12 +45,8 @@
     }
 }
 
-# Alternative port for testing
-:8080 {
-    reverse_proxy app:3000
-    
-    log {
-        output stdout
-        format console
-    }
+# HTTP redirect to HTTPS
+http://localhost {
+    redir https://localhost{uri}
 }
+
